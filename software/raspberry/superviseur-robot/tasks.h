@@ -36,6 +36,12 @@
 
 using namespace std;
 
+enum class CameraStatusEnum {
+    CLOSED,
+    OPENING,
+    OPENED
+};
+
 class Tasks {
 public:
     /**
@@ -67,6 +73,8 @@ private:
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
     bool robotBatteryGet = false;
+    CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
+    Camera* cam = nullptr;
 
     /**********************************************************************/
     /* Tasks                                                              */
@@ -78,6 +86,8 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
+    RT_TASK th_cameraOpen;
+    RT_TASK th_cameraImage;
 
     /**********************************************************************/
     /* Mutex                                                              */
@@ -87,6 +97,8 @@ private:
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
     RT_MUTEX mutex_batteryGet;
+    RT_MUTEX mutex_cameraStatus;
+    RT_MUTEX mutex_camera;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -139,6 +151,8 @@ private:
     /* OUR CODE */
 
     void BatteryStatusTask(void * arg);
+    void OpenCamera(void * arg);
+    void ImageCamera(void * arg);
 
 
     /**********************************************************************/

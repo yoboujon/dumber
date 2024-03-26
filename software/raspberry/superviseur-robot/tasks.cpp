@@ -74,7 +74,16 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    // Added Mutexes
     if (err = rt_mutex_create(&mutex_batteryGet, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_mutex_create(&mutex_cameraStatus, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_mutex_create(&mutex_camera, NULL)) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -128,7 +137,16 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    // Added tasks
     if (err = rt_task_create(&th_battery, "th_battery", 0, PRIORITY_TBATTERY, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_create(&th_cameraOpen, "th_cameraOpen", 0, PRIORITY_TCAMERA, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_create(&th_cameraImage, "th_cameraImage", 0, PRIORITY_TCAMERA, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -176,7 +194,16 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    // Added Tasks
     if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::BatteryStatusTask, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_cameraOpen, (void(*)(void*)) & Tasks::OpenCamera, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCamera, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -277,10 +304,6 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             exit(-1);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             rt_sem_v(&sem_openComRobot);
-        } else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)) {
-            rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
-            robotBatteryGet = true;
-            rt_mutex_release(&mutex_batteryGet);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
             rt_sem_v(&sem_startRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
@@ -292,6 +315,21 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_acquire(&mutex_move, TM_INFINITE);
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
+        }
+        // Added messages
+        else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)) {
+            rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
+            robotBatteryGet = true;
+            rt_mutex_release(&mutex_batteryGet);
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)) {
+            rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+            if(cameraStatus != CameraStatusEnum::OPENED)
+                cameraStatus = CameraStatusEnum::OPENING;
+            rt_mutex_release(&mutex_cameraStatus);
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
+            //?
         }
         delete(msgRcv); // mus be deleted manually, no consumer
     }
@@ -462,11 +500,73 @@ void Tasks::BatteryStatusTask(void * arg) {
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             Message* msg = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
             rt_mutex_release(&mutex_robot);
-            std::cout << "Message Received: " << msg->ToString() << std::endl;
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            monitor.Write(msg);
+            rt_mutex_release(&mutex_monitor);
+
             robotBatteryGet = false;
             getbatterytask = false;
 
         }
         rt_mutex_release(&mutex_batteryGet);
+    }
+}
+
+void Tasks::OpenCamera(void * arg)
+{
+    // Variables
+    int rs(0);
+    CameraStatusEnum cs(CameraStatusEnum::CLOSED);
+
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+
+    while(1)
+    {
+        // Verify that the robot has started
+        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+        rs = robotStarted;
+        rt_mutex_release(&mutex_robotStarted);
+
+        // Check the status of the camera
+        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+        cs = cameraStatus;
+        rt_mutex_release(&mutex_cameraStatus);
+        if((rs != 0) && (cs == CameraStatusEnum::OPENING))
+        {
+            rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+            cam = new Camera(sm, 10);
+            rt_mutex_release(&mutex_camera);
+            rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+            cameraStatus = CameraStatusEnum::OPENED;
+            rt_mutex_release(&mutex_cameraStatus);
+        }
+    }
+}
+
+void Tasks::ImageCamera(void * arg)
+{
+    // Variables
+    CameraStatusEnum cs(CameraStatusEnum::CLOSED);
+
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+
+    while(1)
+    {
+        // Check the status of the camera
+        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+        cs = cameraStatus;
+        rt_mutex_release(&mutex_cameraStatus);
+        if(cs == CameraStatusEnum::OPENED)
+        {
+            Img * img = new Img(cam->Grab());
+            MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            monitor.Write(msgImg);
+            rt_mutex_release(&mutex_monitor);
+        }
     }
 }
