@@ -8,3 +8,6 @@ Depot du projet de temps reel 4eme année au departement GEI de l'INSA Toulouse.
 - doc: contient les sujets de TD et TP
 - aruco_markers: Script de generation des tags (aruco) utilisés sur les robots
 
+
+/home/xenomai/.netbeans/remote/10.105.0.144/insa-10577-Linux-x86_64/home/marin-muller/Documents/4A/Robot/dumber/software/raspberry/superviseur-robot/dist/Debug__RPI_/GNU-Linux
+
