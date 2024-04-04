@@ -158,7 +158,7 @@ private:
     void CloseCamera(void * arg);
     
     // Utility functions
-    void SendToRobot(MessageID message);
+
 
 
     /**********************************************************************/
