@@ -25,8 +25,9 @@
 #define PRIORITY_TSENDTOMON 22
 #define PRIORITY_TRECEIVEFROMMON 25
 #define PRIORITY_TSTARTROBOT 20
-#define PRIORITY_TCAMERA 18
+#define PRIORITY_TCAMERA 21
 #define PRIORITY_TBATTERY 19
+#define PRIORITY_TSETCAMERA 18
 
 /*
  * Some remarks:
@@ -142,11 +143,15 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_create(&th_cameraOpen, "th_cameraOpen", 0, PRIORITY_TCAMERA, 0)) {
+    if (err = rt_task_create(&th_cameraOpen, "th_cameraOpen", 0, PRIORITY_TSETCAMERA, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_create(&th_cameraImage, "th_cameraImage", 0, PRIORITY_TCAMERA, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_create(&th_cameraClose, "th_cameraClose", 0, PRIORITY_TSETCAMERA, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -204,6 +209,10 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCamera, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_cameraClose, (void(*)(void*)) & Tasks::CloseCamera, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -326,6 +335,12 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
             if(cameraStatus == CameraStatusEnum::CLOSED)
                 cameraStatus = CameraStatusEnum::OPENING;
+            rt_mutex_release(&mutex_cameraStatus);
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)) {
+            rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+            if(cameraStatus == CameraStatusEnum::OPENED)
+                cameraStatus = CameraStatusEnum::CLOSING;
             rt_mutex_release(&mutex_cameraStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
@@ -580,6 +595,39 @@ void Tasks::ImageCamera(void * arg)
             rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
             monitor.Write(msgImg);
             rt_mutex_release(&mutex_monitor);
+        }
+    }
+}
+
+void Tasks::CloseCamera(void * arg)
+{
+    // Variables
+    CameraStatusEnum cs(CameraStatusEnum::CLOSED);
+
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    rt_task_set_periodic(NULL, TM_NOW, 500000000);
+
+    while(1)
+    {
+        rt_task_wait_period(NULL);
+
+        // Check the status of the camera
+        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+        cs = cameraStatus;
+        rt_mutex_release(&mutex_cameraStatus);
+        if(cs == CameraStatusEnum::CLOSING)
+        {
+            rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+            cam->Close();
+            delete cam;
+            rt_mutex_release(&mutex_camera);
+            rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+            cameraStatus = CameraStatusEnum::CLOSED;
+            std::cout << "Camera Closed" << std::endl;
+            rt_mutex_release(&mutex_cameraStatus);
         }
     }
 }

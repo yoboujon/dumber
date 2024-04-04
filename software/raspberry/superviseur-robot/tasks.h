@@ -39,7 +39,8 @@ using namespace std;
 enum class CameraStatusEnum {
     CLOSED,
     OPENING,
-    OPENED
+    OPENED,
+    CLOSING
 };
 
 class Tasks {
@@ -88,6 +89,7 @@ private:
     RT_TASK th_battery;
     RT_TASK th_cameraOpen;
     RT_TASK th_cameraImage;
+    RT_TASK th_cameraClose;
 
     /**********************************************************************/
     /* Mutex                                                              */
@@ -153,6 +155,7 @@ private:
     void BatteryStatusTask(void * arg);
     void OpenCamera(void * arg);
     void ImageCamera(void * arg);
+    void CloseCamera(void * arg);
 
 
     /**********************************************************************/
