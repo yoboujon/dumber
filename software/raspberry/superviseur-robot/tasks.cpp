@@ -487,6 +487,13 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
 
 /* OUR CODE */
 
+void Tasks::SendToRobot(MessageID message)
+{
+    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+    WriteInQueue(&q_messageToMon, new Message(message));
+    rt_mutex_release(&mutex_monitor);
+}
+
 void Tasks::BatteryStatusTask(void * arg) {
     // Variables
     int rs(0);
@@ -512,16 +519,9 @@ void Tasks::BatteryStatusTask(void * arg) {
         getbatterytask = robotBatteryGet;
 
         if ((rs != 0) && getbatterytask) {
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            Message* msg = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
-            rt_mutex_release(&mutex_robot);
-            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-            monitor.Write(msg);
-            rt_mutex_release(&mutex_monitor);
-
+            SendToRobot(MESSAGE_ROBOT_BATTERY_GET);
             robotBatteryGet = false;
             getbatterytask = false;
-
         }
         rt_mutex_release(&mutex_batteryGet);
     }
@@ -563,7 +563,10 @@ void Tasks::OpenCamera(void * arg)
             if(is_opened)
             {
                 cameraStatus = CameraStatusEnum::OPENED;
-                std::cout << "Camera Opened" << std::endl;
+                SendToRobot(MESSAGE_ANSWER_ACK);
+            }
+            else {
+                SendToRobot(MESSAGE_ANSWER_NACK);
             }
             rt_mutex_release(&mutex_cameraStatus);
         }
@@ -626,8 +629,8 @@ void Tasks::CloseCamera(void * arg)
             rt_mutex_release(&mutex_camera);
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
             cameraStatus = CameraStatusEnum::CLOSED;
-            std::cout << "Camera Closed" << std::endl;
             rt_mutex_release(&mutex_cameraStatus);
+            SendToRobot(MESSAGE_ANSWER_ACK);
         }
     }
 }
