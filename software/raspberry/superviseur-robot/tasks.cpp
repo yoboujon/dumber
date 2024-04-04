@@ -25,7 +25,7 @@
 #define PRIORITY_TSENDTOMON 22
 #define PRIORITY_TRECEIVEFROMMON 25
 #define PRIORITY_TSTARTROBOT 20
-#define PRIORITY_TCAMERA 21
+#define PRIORITY_TCAMERA 18
 #define PRIORITY_TBATTERY 19
 
 /*
@@ -324,7 +324,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)) {
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-            if(cameraStatus != CameraStatusEnum::OPENED)
+            if(cameraStatus == CameraStatusEnum::CLOSED)
                 cameraStatus = CameraStatusEnum::OPENING;
             rt_mutex_release(&mutex_cameraStatus);
         }
@@ -522,8 +522,13 @@ void Tasks::OpenCamera(void * arg)
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
 
+
+    /* The task starts here */
+    rt_task_set_periodic(NULL, TM_NOW, 500000000);
+
     while(1)
     {
+        rt_task_wait_period(NULL);
         // Verify that the robot has started
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
@@ -537,9 +542,14 @@ void Tasks::OpenCamera(void * arg)
         {
             rt_mutex_acquire(&mutex_camera, TM_INFINITE);
             cam = new Camera(sm, 10);
+            bool is_opened = cam->Open();
             rt_mutex_release(&mutex_camera);
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-            cameraStatus = CameraStatusEnum::OPENED;
+            if(is_opened)
+            {
+                cameraStatus = CameraStatusEnum::OPENED;
+                std::cout << "Camera Opened" << std::endl;
+            }
             rt_mutex_release(&mutex_cameraStatus);
         }
     }
@@ -553,9 +563,12 @@ void Tasks::ImageCamera(void * arg)
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    rt_task_set_periodic(NULL, TM_NOW, 100000000);
 
     while(1)
     {
+        rt_task_wait_period(NULL);
         // Check the status of the camera
         rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
         cs = cameraStatus;
