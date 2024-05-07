@@ -177,6 +177,8 @@ private:
      * @return Message read
      */
     Message *ReadInQueue(RT_QUEUE *queue);
+    
+    void cameraAsked();
 
 
 

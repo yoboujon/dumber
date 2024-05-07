@@ -343,6 +343,19 @@ void Tasks::ReceiveFromMonTask(void *arg) {
                 cameraStatus = CameraStatusEnum::CLOSING;
             rt_mutex_release(&mutex_cameraStatus);
         }
+        else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)) {
+            std::cout << "\n\n\nArena asked !!!\n\n\n" << std::endl;
+            cameraAsked();
+            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)) {
+            std::cout << "\n\n\nArena Confirm asked !!!\n\n\n" << std::endl;
+            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)) {
+            std::cout << "\n\n\nArena Infirm asked !!!\n\n\n" << std::endl;
+            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
+        }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
             //?
         }
@@ -628,5 +641,24 @@ void Tasks::CloseCamera(void * arg)
             rt_mutex_release(&mutex_cameraStatus);
             WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
         }
+    }
+}
+
+void Tasks::cameraAsked()
+{
+    Img * img = new Img(cam->Grab());
+    Arena a = img->SearchArena();
+
+    std::cout << "\n\n\n" << img->ToString() << "\n\n\n" << std::endl;
+    if(a.IsEmpty())
+    {
+        std::cout << "\n\n\nArena null :(\n\n\n" << std::endl;
+        WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_NACK));
+    }
+    else {
+        std::cout << "\n\n\nArena Image sending :)\n\n\n" << std::endl;
+        img->DrawArena(a);
+        MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
+        monitor.Write(msgImg);
     }
 }
