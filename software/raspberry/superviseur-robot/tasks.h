@@ -20,6 +20,7 @@
 
 #include <unistd.h>
 #include <iostream>
+#include <vector>
 
 #include <sys/mman.h>
 #include <alchemy/task.h>
@@ -46,7 +47,8 @@ enum class CameraStatusEnum {
 enum class ArenaStatusEnum {
     NONE,
     SEARCHING,
-    CHOOSEN
+    CONFIRM,
+    INFIRM
 };
 
 class Tasks {
@@ -82,6 +84,7 @@ private:
     bool robotBatteryGet = false;
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
     ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
+    std::vector<Arena> arenaList;
     Camera* cam = nullptr;
 
     /**********************************************************************/
@@ -109,6 +112,7 @@ private:
     RT_MUTEX mutex_batteryGet;
     RT_MUTEX mutex_cameraStatus;
     RT_MUTEX mutex_camera;
+    RT_MUTEX mutex_arenaList;
     RT_MUTEX mutex_arenaStatus;
 
     /**********************************************************************/

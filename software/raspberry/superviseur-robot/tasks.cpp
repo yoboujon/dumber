@@ -90,6 +90,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_mutex_create(&mutex_arenaList, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     if (err = rt_mutex_create(&mutex_arenaStatus, NULL)) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -365,11 +369,17 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)) {
             std::cout << "\n\n\nArena Confirm asked !!!\n\n\n" << std::endl;
-            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
+            rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
+            if(cameraStatus == ArenaStatusEnum::SEARCHING)
+                cameraStatus = ArenaStatusEnum::CONFIRM;
+            rt_mutex_release(&mutex_arenaStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)) {
             std::cout << "\n\n\nArena Infirm asked !!!\n\n\n" << std::endl;
-            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
+            rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
+            if(cameraStatus == ArenaStatusEnum::SEARCHING)
+                cameraStatus = ArenaStatusEnum::INFIRM;
+            rt_mutex_release(&mutex_arenaStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
             //?
@@ -674,6 +684,8 @@ void Tasks::ArenaChoice(void * arg)
         rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
         as = arenaStatus;
         rt_mutex_release(&mutex_arenaStatus);
+        
+        // ASK_ARENA
         if(as == ArenaStatusEnum::SEARCHING)
         {   
             // Gathering last image + closing camera when prompted
@@ -696,6 +708,24 @@ void Tasks::ArenaChoice(void * arg)
                 monitor.Write(msgImg);
                 rt_mutex_release(&mutex_monitor);
             }
+        }
+        
+        // ARENA_CONFIRM / INFIRM
+        else if(as != ArenaStatusEnum::NONE)
+        {
+            if(as == ArenaStatusEnum::CONFIRM)
+            {
+                rt_mutex_acquire(&mutex_arenaList, TM_INFINITE);
+                arenaList.emplace_back(a);
+                rt_mutex_release(&mutex_arenaList);
+            }
+            // Re-open the camera
+            rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+            cam->Open();
+            rt_mutex_release(&mutex_camera);
+            // empty the arena and write ACK to the monitor
+            a = Arena();
+            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
         }
     }
 }
