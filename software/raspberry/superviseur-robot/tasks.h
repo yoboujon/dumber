@@ -47,7 +47,9 @@ enum class CameraStatusEnum {
 enum class ArenaStatusEnum {
     NONE,
     SEARCHING,
+    SEARCHED,
     CONFIRM,
+    CONFIRMED,
     INFIRM
 };
 
@@ -84,7 +86,7 @@ private:
     bool robotBatteryGet = false;
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
     ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
-    std::vector<Arena> arenaList;
+    Arena arena;
     Camera* cam = nullptr;
 
     /**********************************************************************/
@@ -97,9 +99,8 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
-    RT_TASK th_cameraOpen;
+    RT_TASK th_cameraManage;
     RT_TASK th_cameraImage;
-    RT_TASK th_cameraClose;
     RT_TASK th_arenaChoice;
 
     /**********************************************************************/
@@ -112,7 +113,7 @@ private:
     RT_MUTEX mutex_batteryGet;
     RT_MUTEX mutex_cameraStatus;
     RT_MUTEX mutex_camera;
-    RT_MUTEX mutex_arenaList;
+    RT_MUTEX mutex_arena;
     RT_MUTEX mutex_arenaStatus;
 
     /**********************************************************************/
@@ -164,14 +165,15 @@ private:
 
 
     /* OUR CODE */
-
+    
+    // Threads
     void BatteryStatusTask(void * arg);
-    void OpenCamera(void * arg);
+    void ManageCamera(void * arg);
     void ImageCamera(void * arg);
-    void CloseCamera(void * arg);
     void ArenaChoice(void * arg);
     // Utility functions
-
+    MessageID OpenCamera();
+    void CloseCamera();
 
 
     /**********************************************************************/
