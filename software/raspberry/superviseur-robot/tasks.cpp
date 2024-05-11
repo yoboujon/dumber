@@ -214,15 +214,15 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_start(&th_cameraManage, (void(*)(void*)) & Tasks::ManageCamera, this)) {
+    if (err = rt_task_start(&th_cameraManage, (void(*)(void*)) & Tasks::ManageCameraTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCamera, this)) {
+    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCameraTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_start(&th_arenaChoice, (void(*)(void*)) & Tasks::ArenaChoice, this)) {
+    if (err = rt_task_start(&th_arenaChoice, (void(*)(void*)) & Tasks::ArenaChoiceTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -553,7 +553,7 @@ void Tasks::BatteryStatusTask(void * arg) {
     }
 }
 
-void Tasks::ManageCamera(void * arg)
+void Tasks::ManageCameraTask(void * arg)
 {
     // Variables
     int rs(0);
@@ -596,7 +596,7 @@ void Tasks::ManageCamera(void * arg)
     }
 }
 
-void Tasks::ImageCamera(void * arg)
+void Tasks::ImageCameraTask(void * arg)
 {
     // Variables
     CameraStatusEnum cs(CameraStatusEnum::CLOSED);
@@ -666,7 +666,7 @@ void Tasks::CloseCamera()
     rt_mutex_release(&mutex_cameraStatus);
 }
 
-void Tasks::ArenaChoice(void * arg)
+void Tasks::ArenaChoiceTask(void * arg)
 {
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     

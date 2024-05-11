@@ -168,9 +168,9 @@ private:
     
     // Threads
     void BatteryStatusTask(void * arg);
-    void ManageCamera(void * arg);
-    void ImageCamera(void * arg);
-    void ArenaChoice(void * arg);
+    void ManageCameraTask(void * arg);
+    void ImageCameraTask(void * arg);
+    void ArenaChoiceTask(void * arg);
     // Utility functions
     MessageID OpenCamera();
     void CloseCamera();
