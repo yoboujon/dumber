@@ -43,6 +43,12 @@ enum class CameraStatusEnum {
     CLOSING
 };
 
+enum class ArenaStatusEnum {
+    NONE,
+    SEARCHING,
+    CHOOSEN
+};
+
 class Tasks {
 public:
     /**
@@ -75,6 +81,7 @@ private:
     int move = MESSAGE_ROBOT_STOP;
     bool robotBatteryGet = false;
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
+    ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
     Camera* cam = nullptr;
 
     /**********************************************************************/
@@ -90,6 +97,7 @@ private:
     RT_TASK th_cameraOpen;
     RT_TASK th_cameraImage;
     RT_TASK th_cameraClose;
+    RT_TASK th_arenaChoice;
 
     /**********************************************************************/
     /* Mutex                                                              */
@@ -101,6 +109,7 @@ private:
     RT_MUTEX mutex_batteryGet;
     RT_MUTEX mutex_cameraStatus;
     RT_MUTEX mutex_camera;
+    RT_MUTEX mutex_arenaStatus;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -156,7 +165,7 @@ private:
     void OpenCamera(void * arg);
     void ImageCamera(void * arg);
     void CloseCamera(void * arg);
-    
+    void ArenaChoice(void * arg);
     // Utility functions
 
 
@@ -178,7 +187,7 @@ private:
      */
     Message *ReadInQueue(RT_QUEUE *queue);
     
-    void cameraAsked();
+    
 
 
 
