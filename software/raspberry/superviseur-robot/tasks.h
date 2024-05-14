@@ -36,6 +36,12 @@
 
 using namespace std;
 
+/**
+ * @brief The monitor can change the shared data 'cameraStatus' to
+ *  either 'OPENING' or 'CLOSING'. ManageCamera() will be awake afterwards.
+ * Then the variable can switch state to open or close the camera.
+ * Default value should be 'CLOSED'.
+ */
 enum class CameraStatusEnum {
     CLOSED,
     OPENING,
@@ -43,6 +49,12 @@ enum class CameraStatusEnum {
     CLOSING
 };
 
+/**
+ * @ref CameraStatusEnum "Same principle"
+ * @brief The arena can change the shared data 'arenaStatus' to
+ * either 'SEARCHING', 'CONFIRM' or 'INFIRM'. The other status will be
+ * changed by the task ArenaChoice().
+ */
 enum class ArenaStatusEnum {
     NONE,
     SEARCHING,
@@ -82,10 +94,20 @@ private:
     ComRobot robot;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
+
+    /************************************************************************/
+    /* Added variables                                                      */
+    /************************************************************************/
+    
+    // when gathering battery, set to true
     bool robotBatteryGet = false;
+    // current status of the camera
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
-    Camera* cam = new Camera(sm, 10);;
+    // camera object
+    Camera* cam = new Camera(sm, 10);
+    // current status of the arena
     ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
+    // arena object (overlay of the arena on the img)
     Arena arena;
 
     /**********************************************************************/
@@ -109,10 +131,18 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
+
+    // Added mutexes
+
+    // Locking the variable 'robotBatteryGet'
     RT_MUTEX mutex_batteryGet;
+    // Locking the variable 'cameraStatus'
     RT_MUTEX mutex_cameraStatus;
+    // Locking the variable 'cam'
     RT_MUTEX mutex_camera;
+    // Locking the variable 'arena'
     RT_MUTEX mutex_arena;
+    // Locking the variable 'arenaStatus'
     RT_MUTEX mutex_arenaStatus;
 
     /**********************************************************************/
@@ -122,6 +152,9 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+
+    // Added semaphores
+
     // Used to call ManageCameraTask (non-periodic)
     RT_SEM sem_manageCamera;
     // Used to call ArenaChoiceTask (non-periodic)
@@ -167,20 +200,51 @@ private:
     void MoveTask(void *arg);
 
 
-    /* ------------ */
-    /* Added Tasks  */
-    /* ------------ */
+    /************************************************************************/
+    /* Added Tasks                                                          */
+    /************************************************************************/
 
+    /**
+     * @brief [periodic: 500ms]
+     * Task managing the battery. When prompted will get the battery
+     * from the robot and resend it to the monitor.
+     */
     void BatteryStatusTask(void * arg);
+
+    /**
+     * @brief Task managing the camera opening and closing. Will check what
+     * state the camera has and change depending on what the monitor asks.
+     */
     void ManageCameraTask(void * arg);
+
+    /**
+     * @brief [periodic: 10ms]
+     * Task Managing the image received by the camera. Will send each frame
+     * if camera's state is opened.
+     */
     void ImageCameraTask(void * arg);
+
+    /**
+     * @brief Task managing the Arena.
+     * Will search for a camera and overlay if found.
+     * Will store the arena and then show it afterwards.
+     */
     void ArenaChoiceTask(void * arg);
     
-    /* --------------- */
-    /* Added functions */
-    /* --------------- */
+    /************************************************************************/
+    /* Added functions                                                      */
+    /************************************************************************/
     
+    /**
+     * @brief Thread safe. Will open the camera and change the status if succeeded.
+     * 
+     * @return MessageID returns MESSAGE_ANSWER_ACK if successful, NACK if not.
+     */
     MessageID OpenCamera();
+
+    /**
+     * @brief Thread safe. Will close the camera and change the status.
+     */
     void CloseCamera();
 
 
