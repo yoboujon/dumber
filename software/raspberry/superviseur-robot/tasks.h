@@ -20,7 +20,6 @@
 
 #include <unistd.h>
 #include <iostream>
-#include <vector>
 
 #include <sys/mman.h>
 #include <alchemy/task.h>
@@ -85,9 +84,9 @@ private:
     int move = MESSAGE_ROBOT_STOP;
     bool robotBatteryGet = false;
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
+    Camera* cam = new Camera(sm, 10);;
     ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
     Arena arena;
-    Camera* cam = nullptr;
 
     /**********************************************************************/
     /* Tasks                                                              */
@@ -165,12 +164,12 @@ private:
 
 
     /* OUR CODE */
-    
-    // Threads
+
     void BatteryStatusTask(void * arg);
     void ManageCameraTask(void * arg);
-    void ImageCameraTask(void * arg);
+    void ImageCamera(void * arg);
     void ArenaChoiceTask(void * arg);
+    
     // Utility functions
     MessageID OpenCamera();
     void CloseCamera();
@@ -192,8 +191,6 @@ private:
      * @return Message read
      */
     Message *ReadInQueue(RT_QUEUE *queue);
-    
-    
 
 
 

@@ -19,7 +19,6 @@
 #include <stdexcept>
 
 // Déclaration des priorités des taches
-// 99 -> haute, 0 -> basse
 #define PRIORITY_TSERVER 30
 #define PRIORITY_TOPENCOMROBOT 20
 #define PRIORITY_TMOVE 20
@@ -165,6 +164,7 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    
     cout << "Tasks created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -218,7 +218,7 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCameraTask, this)) {
+    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCamera, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -355,22 +355,22 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)) {
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(cameraStatus == ArenaStatusEnum::NONE)
-                cameraStatus = ArenaStatusEnum::SEARCHING;
+            if(arenaStatus == ArenaStatusEnum::NONE)
+                arenaStatus = ArenaStatusEnum::SEARCHING;
             rt_mutex_release(&mutex_arenaStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)) {
             std::cout << "\n\n\nArena Confirm asked !!!\n\n\n" << std::endl;
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(cameraStatus == ArenaStatusEnum::SEARCHED)
-                cameraStatus = ArenaStatusEnum::CONFIRM;
+            if(arenaStatus == ArenaStatusEnum::SEARCHED)
+                arenaStatus = ArenaStatusEnum::CONFIRM;
             rt_mutex_release(&mutex_arenaStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)) {
             std::cout << "\n\n\nArena Infirm asked !!!\n\n\n" << std::endl;
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(cameraStatus == ArenaStatusEnum::SEARCHED)
-                cameraStatus = ArenaStatusEnum::INFIRM;
+            if(arenaStatus == ArenaStatusEnum::SEARCHED)
+                arenaStatus = ArenaStatusEnum::INFIRM;
             rt_mutex_release(&mutex_arenaStatus);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
@@ -581,53 +581,16 @@ void Tasks::ManageCameraTask(void * arg)
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
             cs = cameraStatus;
             rt_mutex_release(&mutex_cameraStatus);
-            
-            if(cs == CameraStatusEnum::OPENING)
+            if(CameraStatusEnum::OPENING == cs)
             {
                 const MessageID tempMessage = this->OpenCamera();
                 WriteInQueue(&q_messageToMon, new Message(tempMessage));
             }
-            if(cs == CameraStatusEnum::CLOSING)
+            if(CameraStatusEnum::CLOSING == cs)
             {
                 this->CloseCamera();
                 WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_ACK));
             }
-        }
-    }
-}
-
-void Tasks::ImageCameraTask(void * arg)
-{
-    // Variables
-    CameraStatusEnum cs(CameraStatusEnum::CLOSED);
-
-    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
-    rt_sem_p(&sem_barrier, TM_INFINITE);
-    
-    rt_task_set_periodic(NULL, TM_NOW, 100000000);
-
-    while(1)
-    {
-        rt_task_wait_period(NULL);
-        
-        // Check the status of the camera
-        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-        cs = cameraStatus;
-        rt_mutex_release(&mutex_cameraStatus);
-        
-        // Checking if camera is opened first
-        if(cs == CameraStatusEnum::OPENED)
-        {
-            // Gathering image from camera
-            Img * img = new Img(cam->Grab());
-            
-            // Sending Image
-            MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
-            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-            monitor.Write(msgImg);
-            rt_mutex_release(&mutex_monitor);
-            // ? delete img;
         }
     }
 }
@@ -637,10 +600,8 @@ MessageID Tasks::OpenCamera()
     cout << "Called " << __PRETTY_FUNCTION__ << endl << flush;
     // Opening camera
     rt_mutex_acquire(&mutex_camera, TM_INFINITE);
-    cam = new Camera(sm, 10);
     const bool isOpened = cam->Open();
     rt_mutex_release(&mutex_camera);
-    
     // Changing status
     if(isOpened)
     {
@@ -648,16 +609,15 @@ MessageID Tasks::OpenCamera()
         cameraStatus = CameraStatusEnum::OPENED;
         rt_mutex_release(&mutex_cameraStatus);
     }
-    return (is_opened ? MESSAGE_ANSWER_ACK : MESSAGE_ANSWER_NACK);
+    return (isOpened ? MESSAGE_ANSWER_ACK : MESSAGE_ANSWER_NACK);
 }
 
 void Tasks::CloseCamera()
 {
-    cout << "Called " << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "\n\nCalled " << __PRETTY_FUNCTION__ << "\n\n" << flush;
     // Closing Camera
     rt_mutex_acquire(&mutex_camera, TM_INFINITE);
     cam->Close();
-    delete cam;
     rt_mutex_release(&mutex_camera);
     
     // Changing Status
@@ -666,20 +626,55 @@ void Tasks::CloseCamera()
     rt_mutex_release(&mutex_cameraStatus);
 }
 
-void Tasks::ArenaChoiceTask(void * arg)
+void Tasks::ImageCamera(void * arg)
 {
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    
     // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
+    rt_task_set_periodic(NULL, TM_NOW, 100000000);
+
+    while(1)
+    {
+        rt_task_wait_period(NULL);
+        // Check the status of the camera
+        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+        const CameraStatusEnum cs = cameraStatus;
+        rt_mutex_release(&mutex_cameraStatus);
+        if(CameraStatusEnum::OPENED == cs)
+        {
+            rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+            Img * img = new Img(cam->Grab());
+            rt_mutex_release(&mutex_camera);
+            rt_mutex_acquire(&mutex_arena, TM_INFINITE);
+            if(!arena.IsEmpty())
+                img->DrawArena(arena);
+            rt_mutex_acquire(&mutex_arena, TM_INFINITE);
+            MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            monitor.Write(msgImg);
+            rt_mutex_release(&mutex_monitor);
+        }
+    }
+}
+
+void Tasks::ArenaChoiceTask(void * arg)
+{   
     // Variables
-    Img * img = nullptr;
+    Img* img = nullptr;
     Arena a;
     ArenaStatusEnum as(ArenaStatusEnum::NONE);
     
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    /* The task starts here */
+    rt_task_set_periodic(NULL, TM_NOW, 490000000);
+
     while(1)
     {
+        rt_task_wait_period(NULL);
         // Check the status of the arena
         rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
         as = arenaStatus;
@@ -691,26 +686,37 @@ void Tasks::ArenaChoiceTask(void * arg)
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
             const CameraStatusEnum cs = cameraStatus;
             rt_mutex_release(&mutex_cameraStatus);
-            
             // Gathering last image + closing camera when prompted
+            std::cout << "\n\n" << (int)cs << "\n\n" << std::endl;
             if(CameraStatusEnum::OPENED == cs)
             {
-                new Img(cam->Grab());
+                rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+                cameraStatus = CameraStatusEnum::CLOSING;
+                rt_mutex_release(&mutex_cameraStatus);
+                
+                rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+                img = new Img(cam->Grab());
+                rt_mutex_release(&mutex_camera);
                 this->CloseCamera();
             }
             
             // Putting the arena overlay if found
             a = img->SearchArena();
             if(a.IsEmpty())
+            {
+                std::cout << "\n\n\nArena is empty\n\n\n" << std::endl;
                 WriteInQueue(&q_messageToMon, new Message(MESSAGE_ANSWER_NACK));
+            }
             else {
-                img->DrawArena(a);
+                std::cout << "\n\n\nArena detected\n\n\n" << std::endl;
                 MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
                 rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
                 monitor.Write(msgImg);
                 rt_mutex_release(&mutex_monitor);
             }
-            // ? delete img;
+            rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
+            arenaStatus = ArenaStatusEnum::SEARCHED;
+            rt_mutex_release(&mutex_arenaStatus);
         }
         
         // ARENA_CONFIRM / INFIRM
@@ -722,22 +728,20 @@ void Tasks::ArenaChoiceTask(void * arg)
                 rt_mutex_acquire(&mutex_arena, TM_INFINITE);
                 arena = a;
                 rt_mutex_release(&mutex_arena);
-                rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-                arenaStatus = ArenaStatusEnum::CONFIRMED;
-                rt_mutex_release(&mutex_arenaStatus);
-            }
-            // Arena Status set to NONE to enable new search
-            else {
-                rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-                arenaStatus = ArenaStatusEnum::NONE;
-                rt_mutex_release(&mutex_arenaStatus);
             }
             
             // empty the temporary arena
             a = Arena();
             // Re-open the camera
+            rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+            cameraStatus = CameraStatusEnum::OPENING;
+            rt_mutex_release(&mutex_cameraStatus);
             const MessageID tempMessage = this->OpenCamera();
             WriteInQueue(&q_messageToMon, new Message(tempMessage));
+
+            rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
+            arenaStatus = ArenaStatusEnum::CONFIRMED;
+            rt_mutex_release(&mutex_arenaStatus);
         }
     }
 }
