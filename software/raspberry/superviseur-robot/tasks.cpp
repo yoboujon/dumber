@@ -18,7 +18,7 @@
 #include "tasks.h"
 #include <stdexcept>
 
-// Déclaration des priorités des taches
+// Task priority: higher has the best priority 
 #define PRIORITY_TSERVER 30
 #define PRIORITY_TOPENCOMROBOT 20
 #define PRIORITY_TMOVE 20
@@ -76,6 +76,7 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    
     // Added Mutexes
     if (err = rt_mutex_create(&mutex_batteryGet, NULL)) {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
@@ -115,6 +116,16 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_sem_create(&sem_startRobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    
+    // Added Semaphores
+    if (err = rt_sem_create(&sem_manageCamera, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_sem_create(&sem_arenaChoice, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -209,6 +220,7 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    
     // Added Tasks
     if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::BatteryStatusTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
@@ -218,7 +230,7 @@ void Tasks::Run() {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCamera, this)) {
+    if (err = rt_task_start(&th_cameraImage, (void(*)(void*)) & Tasks::ImageCameraTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -336,44 +348,63 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_mutex_release(&mutex_move);
         }
         // Added messages
+        // Battery
         else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)) {
             rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
             robotBatteryGet = true;
             rt_mutex_release(&mutex_batteryGet);
         }
+        // Camera
         else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)) {
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-            if(cameraStatus == CameraStatusEnum::CLOSED)
+            if(CameraStatusEnum::CLOSED == cameraStatus)
                 cameraStatus = CameraStatusEnum::OPENING;
             rt_mutex_release(&mutex_cameraStatus);
+            
+            // Calling manageCamera, unblocking the thread.
+            rt_sem_v(&sem_manageCamera, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_CLOSE)) {
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-            if(cameraStatus == CameraStatusEnum::OPENED)
+            if(CameraStatusEnum::OPENED == cameraStatus)
                 cameraStatus = CameraStatusEnum::CLOSING;
             rt_mutex_release(&mutex_cameraStatus);
+            
+            // Calling manageCamera, unblocking the thread.
+            rt_sem_v(&sem_manageCamera, TM_INFINITE);
         }
+        // Arena
         else if (msgRcv->CompareID(MESSAGE_CAM_ASK_ARENA)) {
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(arenaStatus == ArenaStatusEnum::NONE)
+            if(ArenaStatusEnum::NONE == arenaStatus)
                 arenaStatus = ArenaStatusEnum::SEARCHING;
             rt_mutex_release(&mutex_arenaStatus);
+            
+            // Calling arenaChoice, unblocking the thread.
             rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)) {
+            // Debug purpose only
             std::cout << "\n\n\nArena Confirm asked !!!\n\n\n" << std::endl;
+            
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(arenaStatus == ArenaStatusEnum::SEARCHED)
+            if(ArenaStatusEnum::SEARCHED == arenaStatus)
                 arenaStatus = ArenaStatusEnum::CONFIRM;
             rt_mutex_release(&mutex_arenaStatus);
+            
+            // Calling arenaChoice, unblocking the thread.
             rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)) {
+            // Debug purpose only
             std::cout << "\n\n\nArena Infirm asked !!!\n\n\n" << std::endl;
+            
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            if(arenaStatus == ArenaStatusEnum::SEARCHED)
+            if(ArenaStatusEnum::SEARCHED == arenaStatus)
                 arenaStatus = ArenaStatusEnum::INFIRM;
             rt_mutex_release(&mutex_arenaStatus);
+            
+            // Calling arenaChoice, unblocking the thread.
             rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
@@ -518,7 +549,9 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
-/* OUR CODE */
+/* ------------ */
+/* Added Tasks  */
+/* ------------ */
 
 void Tasks::BatteryStatusTask(void * arg) {
     // Variables
@@ -562,18 +595,18 @@ void Tasks::ManageCameraTask(void * arg)
     int rs(0);
     CameraStatusEnum cs(CameraStatusEnum::CLOSED);
 
+    // Checking if all tasks started
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
 
 
-    /* The task starts here */
-    rt_task_set_periodic(NULL, TM_NOW, 500000000);
-
     while(1)
     {
-        rt_task_wait_period(NULL);
+        // Called when semaphore arenChoice incremented
+        rt_sem_p(&sem_manageCamera, TM_INFINITE);
+        
         // Verify that the robot has started
+        // (maybe deleted next, because not useful) -> Camera could be started without it
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
@@ -598,38 +631,7 @@ void Tasks::ManageCameraTask(void * arg)
     }
 }
 
-MessageID Tasks::OpenCamera()
-{
-    cout << "Called " << __PRETTY_FUNCTION__ << endl << flush;
-    // Opening camera
-    rt_mutex_acquire(&mutex_camera, TM_INFINITE);
-    const bool isOpened = cam->Open();
-    rt_mutex_release(&mutex_camera);
-    // Changing status
-    if(isOpened)
-    {
-        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-        cameraStatus = CameraStatusEnum::OPENED;
-        rt_mutex_release(&mutex_cameraStatus);
-    }
-    return (isOpened ? MESSAGE_ANSWER_ACK : MESSAGE_ANSWER_NACK);
-}
-
-void Tasks::CloseCamera()
-{
-    cout << "\n\nCalled " << __PRETTY_FUNCTION__ << "\n\n" << flush;
-    // Closing Camera
-    rt_mutex_acquire(&mutex_camera, TM_INFINITE);
-    cam->Close();
-    rt_mutex_release(&mutex_camera);
-    
-    // Changing Status
-    rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
-    cameraStatus = CameraStatusEnum::CLOSED;
-    rt_mutex_release(&mutex_cameraStatus);
-}
-
-void Tasks::ImageCamera(void * arg)
+void Tasks::ImageCameraTask(void * arg)
 {
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -673,7 +675,7 @@ void Tasks::ArenaChoiceTask(void * arg)
     
     while(1)
     {
-        // Get semaphore
+        // Called when semaphore arenChoice incremented
         rt_sem_p(&sem_arenaChoice, TM_INFINITE);
         // Check the status of the arena
         rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
@@ -743,4 +745,39 @@ void Tasks::ArenaChoiceTask(void * arg)
             rt_mutex_release(&mutex_arenaStatus);
         }
     }
+}
+
+/* --------------- */
+/* Added functions */
+/* --------------- */
+
+MessageID Tasks::OpenCamera()
+{
+    cout << "Called " << __PRETTY_FUNCTION__ << endl << flush;
+    // Opening camera
+    rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+    const bool isOpened = cam->Open();
+    rt_mutex_release(&mutex_camera);
+    // Changing status
+    if(isOpened)
+    {
+        rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+        cameraStatus = CameraStatusEnum::OPENED;
+        rt_mutex_release(&mutex_cameraStatus);
+    }
+    return (isOpened ? MESSAGE_ANSWER_ACK : MESSAGE_ANSWER_NACK);
+}
+
+void Tasks::CloseCamera()
+{
+    cout << "\n\nCalled " << __PRETTY_FUNCTION__ << "\n\n" << flush;
+    // Closing Camera
+    rt_mutex_acquire(&mutex_camera, TM_INFINITE);
+    cam->Close();
+    rt_mutex_release(&mutex_camera);
+    
+    // Changing Status
+    rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
+    cameraStatus = CameraStatusEnum::CLOSED;
+    rt_mutex_release(&mutex_cameraStatus);
 }

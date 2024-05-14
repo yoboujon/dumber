@@ -122,6 +122,9 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    // Used to call ManageCameraTask (non-periodic)
+    RT_SEM sem_manageCamera;
+    // Used to call ArenaChoiceTask (non-periodic)
     RT_SEM sem_arenaChoice;
 
     /**********************************************************************/
@@ -164,14 +167,19 @@ private:
     void MoveTask(void *arg);
 
 
-    /* OUR CODE */
+    /* ------------ */
+    /* Added Tasks  */
+    /* ------------ */
 
     void BatteryStatusTask(void * arg);
     void ManageCameraTask(void * arg);
-    void ImageCamera(void * arg);
+    void ImageCameraTask(void * arg);
     void ArenaChoiceTask(void * arg);
     
-    // Utility functions
+    /* --------------- */
+    /* Added functions */
+    /* --------------- */
+    
     MessageID OpenCamera();
     void CloseCamera();
 
