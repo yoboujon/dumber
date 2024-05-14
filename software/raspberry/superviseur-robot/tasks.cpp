@@ -358,6 +358,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             if(arenaStatus == ArenaStatusEnum::NONE)
                 arenaStatus = ArenaStatusEnum::SEARCHING;
             rt_mutex_release(&mutex_arenaStatus);
+            rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_CONFIRM)) {
             std::cout << "\n\n\nArena Confirm asked !!!\n\n\n" << std::endl;
@@ -365,6 +366,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             if(arenaStatus == ArenaStatusEnum::SEARCHED)
                 arenaStatus = ArenaStatusEnum::CONFIRM;
             rt_mutex_release(&mutex_arenaStatus);
+            rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_ARENA_INFIRM)) {
             std::cout << "\n\n\nArena Infirm asked !!!\n\n\n" << std::endl;
@@ -372,6 +374,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             if(arenaStatus == ArenaStatusEnum::SEARCHED)
                 arenaStatus = ArenaStatusEnum::INFIRM;
             rt_mutex_release(&mutex_arenaStatus);
+            rt_sem_v(&sem_arenaChoice, TM_INFINITE);
         }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
             //?
@@ -666,15 +669,12 @@ void Tasks::ArenaChoiceTask(void * arg)
     ArenaStatusEnum as(ArenaStatusEnum::NONE);
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
-    // Synchronization barrier (waiting that all tasks are starting)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
-    /* The task starts here */
-    rt_task_set_periodic(NULL, TM_NOW, 490000000);
-
     while(1)
     {
-        rt_task_wait_period(NULL);
+        // Get semaphore
+        rt_sem_p(&sem_arenaChoice, TM_INFINITE);
         // Check the status of the arena
         rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
         as = arenaStatus;
@@ -736,11 +736,10 @@ void Tasks::ArenaChoiceTask(void * arg)
             rt_mutex_acquire(&mutex_cameraStatus, TM_INFINITE);
             cameraStatus = CameraStatusEnum::OPENING;
             rt_mutex_release(&mutex_cameraStatus);
-            const MessageID tempMessage = this->OpenCamera();
-            WriteInQueue(&q_messageToMon, new Message(tempMessage));
+            this->OpenCamera();
 
             rt_mutex_acquire(&mutex_arenaStatus, TM_INFINITE);
-            arenaStatus = ArenaStatusEnum::CONFIRMED;
+            arenaStatus = ArenaStatusEnum::NONE;
             rt_mutex_release(&mutex_arenaStatus);
         }
     }
