@@ -60,7 +60,6 @@ enum class ArenaStatusEnum {
     SEARCHING,
     SEARCHED,
     CONFIRM,
-    CONFIRMED,
     INFIRM
 };
 
