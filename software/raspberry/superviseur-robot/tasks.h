@@ -108,6 +108,8 @@ private:
     ArenaStatusEnum arenaStatus = ArenaStatusEnum::NONE;
     // arena object (overlay of the arena on the img)
     Arena arena;
+    // when gathering position, set to true
+    bool positionEnabled = false;
 
     /**********************************************************************/
     /* Tasks                                                              */
@@ -143,6 +145,8 @@ private:
     RT_MUTEX mutex_arena;
     // Locking the variable 'arenaStatus'
     RT_MUTEX mutex_arenaStatus;
+    // Locking the variable 'positionEnabled'
+    RT_MUTEX mutex_positionEnabled;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -158,6 +162,8 @@ private:
     RT_SEM sem_manageCamera;
     // Used to call ArenaChoiceTask (non-periodic)
     RT_SEM sem_arenaChoice;
+    // Used to call FindPositionTask (non-periodic)
+    RT_SEM sem_findPosition;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -229,6 +235,9 @@ private:
      * Will store the arena and then show it afterwards.
      */
     void ArenaChoiceTask(void * arg);
+    
+    
+    void FindPositionTask(void * arg);
     
     /************************************************************************/
     /* Added functions                                                      */

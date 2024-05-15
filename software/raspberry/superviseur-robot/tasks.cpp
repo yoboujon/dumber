@@ -17,6 +17,7 @@
 
 #include "tasks.h"
 #include <stdexcept>
+#include <vector>
 
 // Task priority: higher has the best priority 
 #define PRIORITY_TSERVER 30
@@ -35,6 +36,7 @@
 // Their priority is lower.
 #define PRIORITY_TSETCAMERA 18
 #define PRIOTITY_TARENA 17
+#define PRIOTITY_TPOSITION 16
 
 /*
  * Some remarks:
@@ -46,7 +48,7 @@
  * 3- Data flow is probably not optimal
  * 
  * 4- Take into account that ComRobot::Write will block your task when serial buffer is full,
- *   time for internal buffer to flush
+ *   time for interponal buffer to flush
  * 
  * 5- Same behavior existe for ComMonitor::Write !
  * 
@@ -122,6 +124,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_sem_create(&sem_startRobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_sem_create(&sem_findPosition, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -408,6 +414,16 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             // Calling arenaChoice, unblocking the thread.
             rt_sem_v(&sem_arenaChoice);
         }
+        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_START)){   
+            rt_mutex_acquire(&mutex_positionEnabled, TM_INFINITE);
+            positionEnabled = true;
+            rt_mutex_release(&mutex_positionEnabled);
+        }
+        else if (msgRcv->CompareID(MESSAGE_CAM_POSITION_COMPUTE_STOP)){   
+            rt_mutex_acquire(&mutex_positionEnabled, TM_INFINITE);
+            positionEnabled = false;
+            rt_mutex_release(&mutex_positionEnabled);
+        }
         else if (msgRcv->CompareID(MESSAGE_CAM_IMAGE)) {
             //?
         }
@@ -634,6 +650,9 @@ void Tasks::ImageCameraTask(void * arg)
     // Variables
     CameraStatusEnum cs = CameraStatusEnum::CLOSED;
     Arena a = Arena();
+    std::vector<MessagePosition*> msgPos = {};
+    MessageImg *msgImg = nullptr;
+    bool pe = false;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -656,6 +675,10 @@ void Tasks::ImageCameraTask(void * arg)
         a = arena;
         rt_mutex_release(&mutex_arena);
         
+        rt_mutex_acquire(&mutex_positionEnabled, TM_INFINITE);
+        pe = positionEnabled;
+        rt_mutex_release(&mutex_positionEnabled);
+        
         // Only gather image if opened
         if(CameraStatusEnum::OPENED == cs)
         {
@@ -668,9 +691,24 @@ void Tasks::ImageCameraTask(void * arg)
             if(!a.IsEmpty())
                 img->DrawArena(a);
             
+            // Check position
+            auto listPos = img->SearchRobot(a);
+            img->DrawAllRobots(listPos);
+            
             // Sending the image to the monitor
-            MessageImg *msgImg = new MessageImg(MESSAGE_CAM_IMAGE, img);
+            if(!listPos.empty())
+            {
+                for(auto l : listPos)
+                    msgPos.emplace_back(new MessagePosition(MESSAGE_CAM_POSITION, l));
+            }
+            msgImg= new MessageImg(MESSAGE_CAM_IMAGE, img);
             rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+            if(!listPos.empty())
+            {
+                for(auto mg : msgPos)
+                    monitor.Write(mg);
+                msgPos.clear();
+            }
             monitor.Write(msgImg);
             rt_mutex_release(&mutex_monitor);
         }
