@@ -127,12 +127,12 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_sem_create(&sem_findPosition, NULL, 0, S_FIFO)) {
+    
+    // Added Semaphores
+    if (err = rt_sem_create(&sem_instantBattery, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    
-    // Added Semaphores
     if (err = rt_sem_create(&sem_manageCamera, NULL, 0, S_FIFO)) {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -171,6 +171,10 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
     // Added tasks
+    if (err = rt_task_create(&th_batteryPeriodic, "th_batteryPeriodic", 0, PRIORITY_TBATTERY, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     if (err = rt_task_create(&th_battery, "th_battery", 0, PRIORITY_TBATTERY, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -234,7 +238,11 @@ void Tasks::Run() {
     }
     
     // Added Tasks
-    if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::BatteryStatusTask, this)) {
+    if (err = rt_task_start(&th_batteryPeriodic, (void(*)(void*)) & Tasks::BatteryPeriodicTask, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::BatteryTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -364,8 +372,11 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         // Battery
         else if (msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_GET)) {
             rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
-            robotBatteryGet = true;
+            batteryEnabled = true;
             rt_mutex_release(&mutex_batteryGet);
+            
+            // Calling BatteryTask, unblocking the thread.
+            rt_sem_v(&sem_instantBattery);
         }
         // Camera
         else if (msgRcv->CompareID(MESSAGE_CAM_OPEN)) {
@@ -570,10 +581,10 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
 /* Added Tasks                                                          */
 /************************************************************************/
 
-void Tasks::BatteryStatusTask(void * arg) {
+void Tasks::BatteryPeriodicTask(void * arg) {
     // Variables
     int rs(0);
-    bool getbatterytask(false);
+    bool be(false);
 
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -585,27 +596,24 @@ void Tasks::BatteryStatusTask(void * arg) {
 
     while (1) {
         rt_task_wait_period(NULL);
+        this->SendBattery(rs,be);
+    }
+}
 
-        // Verify that the robot has started
-        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-        rs = robotStarted;
-        rt_mutex_release(&mutex_robotStarted);
-
-        // Checking if battery should be gathered
-        rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
-        getbatterytask = robotBatteryGet;
-
-        if ((rs != 0) && getbatterytask) {
-            // Acquire the battery level and send it to the message queue
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            Message* msg = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
-            rt_mutex_release(&mutex_robot);
-            WriteInQueue(&q_messageToMon, msg);
-            // Resetting the battery status
-            robotBatteryGet = false;
-            getbatterytask = false;
-        }
-        rt_mutex_release(&mutex_batteryGet);
+void Tasks::BatteryTask(void * arg) {
+    // Variables
+    int rs(0);
+    bool be(false);
+    
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    while(1)
+    {
+        // Called when semaphore arenChoice incremented
+        rt_sem_p(&sem_instantBattery, TM_INFINITE);
+        this->SendBattery(rs,be);
     }
 }
 
@@ -622,7 +630,7 @@ void Tasks::ManageCameraTask(void * arg)
 
     while(1)
     {
-        // Called when semaphore arenChoice incremented
+        // Called when semaphore manageCamera incremented
         rt_sem_p(&sem_manageCamera, TM_INFINITE);
         
         // Check the status of the camera and store it in a local variable
@@ -811,6 +819,27 @@ void Tasks::ArenaChoiceTask(void * arg)
 /************************************************************************/
 /* Added functions                                                      */
 /************************************************************************/
+
+void Tasks::SendBattery(int& rs, bool& be)
+{
+    // Verify that the robot has started
+    rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+    rs = robotStarted;
+    rt_mutex_release(&mutex_robotStarted);
+
+    // Checking if battery should be gathered
+    rt_mutex_acquire(&mutex_batteryGet, TM_INFINITE);
+    be = batteryEnabled;
+    rt_mutex_release(&mutex_batteryGet);
+
+    if ((rs != 0) && be) {
+        // Acquire the battery level and send it to the message queue
+        rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+        Message* msg = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
+        rt_mutex_release(&mutex_robot);
+        WriteInQueue(&q_messageToMon, msg);
+    }
+}
 
 MessageID Tasks::OpenCamera()
 {

@@ -99,7 +99,7 @@ private:
     /************************************************************************/
     
     // when gathering battery, set to true
-    bool robotBatteryGet = false;
+    bool batteryEnabled = false;
     // current status of the camera
     CameraStatusEnum cameraStatus = CameraStatusEnum::CLOSED;
     // camera object
@@ -120,6 +120,8 @@ private:
     RT_TASK th_openComRobot;
     RT_TASK th_startRobot;
     RT_TASK th_move;
+    
+    RT_TASK th_batteryPeriodic;
     RT_TASK th_battery;
     RT_TASK th_cameraManage;
     RT_TASK th_cameraImage;
@@ -158,12 +160,12 @@ private:
 
     // Added semaphores
 
+    // Used when we want to show the battery once.
+    RT_SEM sem_instantBattery;
     // Used to call ManageCameraTask (non-periodic)
     RT_SEM sem_manageCamera;
     // Used to call ArenaChoiceTask (non-periodic)
     RT_SEM sem_arenaChoice;
-    // Used to call FindPositionTask (non-periodic)
-    RT_SEM sem_findPosition;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -214,7 +216,8 @@ private:
      * Task managing the battery. When prompted will get the battery
      * from the robot and resend it to the monitor.
      */
-    void BatteryStatusTask(void * arg);
+    void BatteryPeriodicTask(void * arg);
+    void BatteryTask(void * arg);
 
     /**
      * @brief Task managing the camera opening and closing. Will check what
@@ -242,6 +245,8 @@ private:
     /************************************************************************/
     /* Added functions                                                      */
     /************************************************************************/
+    
+    void SendBattery(int& rs, bool& be);
     
     /**
      * @brief Thread safe. Will open the camera and change the status if succeeded.
