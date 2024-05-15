@@ -653,6 +653,7 @@ void Tasks::ImageCameraTask(void * arg)
     std::vector<MessagePosition*> msgPos = {};
     MessageImg *msgImg = nullptr;
     bool pe = false;
+    std::list<Position> listPos = {};
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -691,26 +692,30 @@ void Tasks::ImageCameraTask(void * arg)
             if(!a.IsEmpty())
                 img->DrawArena(a);
             
-            // Check position
-            auto listPos = img->SearchRobot(a);
-            img->DrawAllRobots(listPos);
-            
-            // Sending the image to the monitor
-            if(!listPos.empty())
+            // Gathering position
+            if(pe)
             {
+                // Gather every robot available
+                listPos = img->SearchRobot(a);
+                // For every position, draw the robot and send the message
                 for(auto l : listPos)
+                {
+                    img->DrawRobot(l);
                     msgPos.emplace_back(new MessagePosition(MESSAGE_CAM_POSITION, l));
+                }
             }
+            
             msgImg= new MessageImg(MESSAGE_CAM_IMAGE, img);
             rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-            if(!listPos.empty())
-            {
-                for(auto mg : msgPos)
-                    monitor.Write(mg);
-                msgPos.clear();
-            }
+            // Writing every message position
+            for(auto mp : msgPos)
+                monitor.Write(mp);
+            // Writing every message image
             monitor.Write(msgImg);
             rt_mutex_release(&mutex_monitor);
+            
+            // clearing the vector because all its values are unassigned
+            msgPos.clear();
         }
     }
 }
